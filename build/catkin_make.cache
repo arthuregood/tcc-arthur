@@ -1,2 +1,2 @@
-
+tcc
 -DCATKIN_DEVEL_PREFIX=/home/arthuregood/tcc-arthur/devel -DCMAKE_INSTALL_PREFIX=/home/arthuregood/tcc-arthur/install -G Unix Makefiles

@@ -35,3 +35,15 @@
 /home/arthuregood/tcc-arthur/build/gtest/googletest/CMakeFiles/test.dir
 /home/arthuregood/tcc-arthur/build/gtest/googletest/CMakeFiles/gtest_main.dir
 /home/arthuregood/tcc-arthur/build/gtest/googletest/CMakeFiles/gtest.dir
+/home/arthuregood/tcc-arthur/build/tcc/CMakeFiles/install/strip.dir
+/home/arthuregood/tcc-arthur/build/tcc/CMakeFiles/install/local.dir
+/home/arthuregood/tcc-arthur/build/tcc/CMakeFiles/edit_cache.dir
+/home/arthuregood/tcc-arthur/build/tcc/CMakeFiles/test.dir
+/home/arthuregood/tcc-arthur/build/tcc/CMakeFiles/std_msgs_generate_messages_py.dir
+/home/arthuregood/tcc-arthur/build/tcc/CMakeFiles/std_msgs_generate_messages_nodejs.dir
+/home/arthuregood/tcc-arthur/build/tcc/CMakeFiles/std_msgs_generate_messages_lisp.dir
+/home/arthuregood/tcc-arthur/build/tcc/CMakeFiles/std_msgs_generate_messages_eus.dir
+/home/arthuregood/tcc-arthur/build/tcc/CMakeFiles/install.dir
+/home/arthuregood/tcc-arthur/build/tcc/CMakeFiles/list_install_components.dir
+/home/arthuregood/tcc-arthur/build/tcc/CMakeFiles/rebuild_cache.dir
+/home/arthuregood/tcc-arthur/build/tcc/CMakeFiles/std_msgs_generate_messages_cpp.dir
