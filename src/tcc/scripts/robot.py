@@ -1,88 +1,85 @@
 #!/usr/bin/env python3
-import math
+
+import argparse
 import rospy
+from PIL import Image
+import numpy as np
+from geometry_msgs.msg import PoseStamped
 from geometry_msgs.msg import Twist
-from nav_msgs.msg import Odometry
-from sensor_msgs.msg import LaserScan
-from tf.transformations import euler_from_quaternion
 
-feedback = Odometry()
+class PotentialFields:
+    def __init__(self,robot_name):
+        rospy.init_node('potential_fields_node')
+        self.pixels_array = self.obstacles("map_1.png")
+        self.posicao_atual = PoseStamped()
+        self.posicao_atual.header.frame_id = 'map'  # Define o frame de referência
+        self.posicao_atual.pose.position.x = 5.0  # Define a posição x inicial como 5
+        self.posicao_atual.pose.position.y = 5.0  # Define a posição y inicial como 5
+        self.posicao_atual.pose.position.z = 0.0  # Define a posição z inicial como 0
 
-def subCallbackSensor(msg):
-    rospy.loginfo("msg", msg)
-    ranges = msg.ranges
+        self.position_publisher = rospy.Publisher(f'/{robot_name}/current_position', PoseStamped, queue_size=1)
+        self.twist_publisher = rospy.Publisher(f'/{robot_name}/cmd_vel', Twist, queue_size=1)
 
-    min_distance = min(ranges)
-    if min_distance < 0.5: 
-        rospy.loginfo(f"Obstaculo em {min_distance}m.")
+    def obstacles(self, map):
 
+        image = Image.open(f"src/tcc/worlds/{map}")
+        self.image_gray = image.convert('L')
+        self.pixels_array = np.array(self.image_gray)
+        self.threshold = 254
+        filled_pixels = self.pixels_array < self.threshold
+        return filled_pixels
 
-def subCallback(msg):
-    global feedback
-    feedback = msg
+    def potential_fields(self):
+        print(self.posicao_atual)
+        ponto_destino = (5, 5)  # Substitua com as coordenadas do ponto de destino
+        vetor_atracao = ponto_destino - np.array([self.posicao_atual.pose.position.x, self.posicao_atual.pose.position.y])
 
-def controlX(robot_name, robotx, roboty):
+        vetor_repulsao_total = np.zeros(2)  # Inicialize com vetor nulo
+        constante_repulsao = 1000  # Ajuste conforme necessário
 
-    # adicionar uma checagem do sensor, caso um obstáculo apareça
-    # o robô deverá tomar uma ação antes de seguir o PID
+        for i in range(self.pixels_array.shape[0]):
+            for j in range(self.pixels_array.shape[1]):
+                if self.pixels_array[i, j]:
+                    vetor_repulsao = np.array([j, i]) - np.array([self.posicao_atual.pose.position.x, self.posicao_atual.pose.position.y])
+                    magnitude = constante_repulsao / np.linalg.norm(vetor_repulsao)**2
+                    vetor_repulsao_total += vetor_repulsao / np.linalg.norm(vetor_repulsao) * magnitude
 
-    rospy.init_node(f'control_{robot_name}', anonymous=True)
-    pub = rospy.Publisher(f'/{robot_name}/cmd_vel', Twist, queue_size=10)
-    rospy.Subscriber(f'/{robot_name}/base_pose_ground_truth', Odometry, subCallback)
-    rospy.Subscriber(f'/{robot_name}/laser_scan', LaserScan, subCallbackSensor)
+        vetor_resultante = vetor_atracao + vetor_repulsao_total
 
-    xdesejado = float(robotx)
-    ydesejado = float(roboty)
+        self.posicao_atual.pose.position.x += vetor_resultante[0]
+        self.posicao_atual.pose.position.y += vetor_resultante[1]
 
-    dist = 99.0
-    Kp = 1.5
-    Ki = 0.000005
-    Kd = 0.000005
-    errorInt = 0
-    errorDer = 0
-    tolerance = 0.05
-    Korie = 4.0
-    lastError = 0
+        # Publica a posição atual
+        self.position_publisher.publish(self.posicao_atual)
+        
+        # Enviar comandos para o robô (exemplo hipotético)
+        velocidade_linear = 0.1  # Ajuste conforme necessário
+        velocidade_angular = 0.0  # Ajuste conforme necessário
 
-    msg = Twist()
-    rate = rospy.Rate(10)
-    pub.publish(msg)
+        # Comande o movimento do robô (depende do seu ambiente e tipo de robô)
+        # Exemplo hipotético:
+        self.move_robot(velocidade_linear, velocidade_angular)
 
-    last_time = rospy.get_time()
+    def move_robot(self, linear, angular):
+        comando = Twist()
+        comando.linear.x = linear
+        comando.angular.z = angular
+        print("comando", comando)
+        self.twist_publisher.publish(comando)
 
-    while abs(dist) > tolerance:
+    def run(self):
+        rate = rospy.Rate(10)
 
-        actual_time = rospy.get_time()
-        dt = actual_time - last_time
-
-        # check if dt is not zero
-        if abs(dt) < 1e-6:
-            dt = 1e-6
-
-        dist = math.sqrt(math.pow(xdesejado-feedback.pose.pose.position.x, 2) +
-                        math.pow(ydesejado-feedback.pose.pose.position.y, 2))
-        errorInt = errorInt + (dist * dt)
-        errorDer = (dist - lastError) / dt
-        msg.linear.x = Kp*dist + Ki * errorInt + Kd * errorDer
-
-        rospy.loginfo("x %f, y %f, erro %f", feedback.pose.pose.position.x, feedback.pose.pose.position.y, dist)
-        msg.angular.z = Korie * \
-            (math.atan2(ydesejado - feedback.pose.pose.position.y, xdesejado - feedback.pose.pose.position.x) - euler_from_quaternion([feedback.pose.pose.orientation.x, feedback.pose.pose.orientation.y, feedback.pose.pose.orientation.z, feedback.pose.pose.orientation.w])[2])
-
-        pub.publish(msg)
-        rate.sleep()
-
-        last_time = actual_time
-        lastError = dist
-
-    rospy.loginfo("Trajeto finalizado")
-    msg.linear.x = 0
-    msg.angular.z = 0
-    pub.publish(msg)
+        while not rospy.is_shutdown():
+            self.potential_fields() 
+            rate.sleep()
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Control a human-like robot.')
+    parser.add_argument('robot_name', type=str, help='Name of the robot')
+    args = parser.parse_args()
     try:
-        controlX("robot_0", -1, 3)
-
+        pf = PotentialFields(args.robot_name)
+        pf.run()
     except rospy.ROSInterruptException:
         pass

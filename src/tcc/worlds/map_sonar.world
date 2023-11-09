@@ -7,5 +7,5 @@ floorplan (name "robopark" size [16.000 16.000 0.800] pose [0 0 0 0] bitmap "map
 
 # throw in a robot
 roomba (name "r0" pose [ -4 -7 0 0 ]   sonar(pose [ 0.0 0 0 0 ]) color "red")
-roomba (name "h1" pose [ -7 0 0 0 ]   sonar(pose [ 0.0 0 0 0 ]) color "blue")
-roomba (name "h2" pose [ 6 -2 0 0 ]   sonar(pose [ 0.0 0 0 0 ]) color "green")
+#roomba (name "h1" pose [ -7 0 0 0 ]   sonar(pose [ 0.0 0 0 0 ]) color "blue")
+#roomba (name "h2" pose [ 6 -2 0 0 ]   sonar(pose [ 0.0 0 0 0 ]) color "green")

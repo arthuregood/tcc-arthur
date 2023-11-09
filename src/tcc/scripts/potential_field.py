@@ -1,116 +1,98 @@
+#!/usr/bin/env python3
+
 import rospy
-from geometry_msgs.msg import Twist
+from tf.transformations import euler_from_quaternion
+from PIL import Image
 import numpy as np
+from geometry_msgs.msg import PoseStamped, Twist, Quaternion
 
-class Obstacle:
-    def __init__(self, x, y, radius):
-        self.x = x
-        self.y = y
-        self.rad = radius
+class PotentialFields:
+    def __init__(self):
+        rospy.init_node('potential_fields_node')
+        self.pixels_array = self.obstacles("map_1.png")
+        self.posicao_atual = PoseStamped()
+        self.posicao_atual.header.frame_id = 'map'  
+        self.posicao_atual.pose.position.x = 5.0  
+        self.posicao_atual.pose.position.y = 5.0  
+        self.posicao_atual.pose.position.z = 0.0 
 
-class PotentialField:
-    def __init__(self, obstacles):
-        self.min_vel = 2
-        self.max_vel = 40
-        self.map_dim = self.mapw, self.maph = (10, 10)
-        self.field = np.zeros((self.mapw, self.maph, 2))
-        self.goal_pose = self.gx, self.gy = (8, 8)
-        self.goal_radius = 0.5
-        self.goal_field = None
-        self.obstacles = obstacles
-        self.obstacle_field = dict((i, np.array(0)) for i in obstacles)
-        self.updated = False
-        self.virtual = False
-        self.fcf = 5
+        self.orientacao_atual = Quaternion(x=0.0, y=0.0, z=0.0, w=1.0)
 
-    def start(self):
-        self.goal_field = self.attract_goal(self.goal_radius)
-        self.field = self.goal_field
-        self.updated = False
-        for obs in self.obstacles:
-            if not obs in self.obstacle_field.keys():
-                self.obstacle_field[obs] = self.repel_obstacle(obs)
-            self.field += self.obstacle_field[obs]
-        self.clampField(25)
+        self.position_publisher = rospy.Publisher('/current_position', PoseStamped, queue_size=1)
+        self.twist_publisher = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
+        self.odom_publisher = rospy.Publisher("/odom", PoseStamped, self.callback_pose, queue_size=1)
 
-    def draw(self):
-        print(self.field)
+    def callback_pose(self, msg):
+        print("msg", msg)
+        self.orientacao_atual = msg.orientation
 
-    def attract_goal(self, radius):
-        target_pos = self.goal_pose
-        x = np.linspace(0, self.mapw - 1, self.mapw)
-        y = np.linspace(0, self.maph - 1, self.maph)
-        meshgrid = np.meshgrid(x, y, sparse=False, indexing='ij')
-        meshgridX = target_pos[0] - meshgrid[0]
-        meshgridY = target_pos[1] - meshgrid[1]
-        field = np.zeros((self.mapw, self.maph, 2))
-        field[:, :, 0] = meshgridX
-        field[:, :, 1] = meshgridY
-        magnitudeField = np.sqrt((field[:, :, 0] ** 2 + field[:, :, 1] ** 2)*2)
-        magnitudeField = np.clip(magnitudeField, 0.0000001, np.inf)
-        normalField = np.zeros((self.mapw, self.maph, 2))
-        normalField[:, :, 0] = field[:, :, 0] / magnitudeField
-        normalField[:, :, 1] = field[:, :, 1] / magnitudeField
-        magnitudeField[np.where(magnitudeField <= self.goal_radius)] = cvtRange(magnitudeField[np.where(magnitudeField <= self.goal_radius)], 0, radius, self.max_vel, self.min_vel)
-        magnitudeField[np.where(magnitudeField > radius)] = 15
-        field[:, :, 0] = normalField[:, :, 0] * magnitudeField
-        field[:, :, 1] = normalField[:, :, 1] * magnitudeField
-        return field
+    def obstacles(self, map):
+        image = Image.open(f"src/tcc/worlds/{map}")
+        self.image_gray = image.convert('L')
+        self.pixels_array = np.array(self.image_gray)
+        self.threshold = 254
+        filled_pixels = self.pixels_array < self.threshold
+        return filled_pixels
 
-    def repel_obstacle(self, obs):
-        repulsePos = (obs.x, obs.y)
-        x = np.linspace(0, self.mapw - 1, self.mapw)
-        y = np.linspace(0, self.maph - 1, self.maph)
-        meshgrid = np.meshgrid(x, y, sparse=False, indexing='ij')
-        meshgridX = meshgrid[0] - repulsePos[0]
-        meshgridY = meshgrid[1] - repulsePos[1]
-        field = np.zeros((self.mapw, self.maph, 2))
-        field[:, :, 0] = meshgridX
-        field[:, :, 1] = meshgridY
-        magnitudeField = np.sqrt((field[:, :, 0] ** 2 + field[:, :, 1] ** 2))
-        magnitudeField = np.clip(magnitudeField, 0.0000001, np.inf)
-        normalField = np.zeros((self.mapw, self.maph, 2))
-        normalField[:, :, 0] = field[:, :, 0] / magnitudeField
-        normalField[:, :, 1] = field[:, :, 1] / magnitudeField
-        filter_ = np.where(magnitudeField <= obs.rad*2.5)
-        if len(filter_) != 0:
-            magnitudeField[filter_] = cvtRange(magnitudeField[filter_], 0, obs.rad*2.5, self.max_vel, self.min_vel)
-        filter_ = np.where(magnitudeField > obs.rad*2.5)
-        if len(filter_) != 0:
-            magnitudeField[filter_] = 0
-        field[:, :, 0] = normalField[:, :, 0] * magnitudeField
-        field[:, :, 1] = normalField[:, :, 1] * magnitudeField
-        return field
+    def potential_fields(self):
+        ponto_destino = (5, 5)  
+        vetor_atracao = ponto_destino - np.array([self.posicao_atual.pose.position.x, self.posicao_atual.pose.position.y])
 
-    def clampField(self, maxVel):
-        magnitudeField = np.sqrt(self.field[:, :, 0] ** 2 + self.field[:, :, 1] ** 2)
-        magnitudeField = np.clip(magnitudeField, 0.000001, np.inf)
-        normalField = np.zeros((self.mapw, self.maph, 2))
-        normalField[:, :, 0] = self.field[:, :, 0] / magnitudeField
-        normalField[:, :, 1] = self.field[:, :, 1] / magnitudeField
-        magnitudeField = np.clip(magnitudeField, 0, maxVel)
-        self.field[:, :, 0] = normalField[:, :, 0] * magnitudeField
-        self.field[:, :, 1] = normalField[:, :, 1] * magnitudeField
+        vetor_repulsao_total = np.zeros(2)  
+        constante_repulsao = 1000  
 
-rospy.init_node('potential_field')
-cmd_vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
-rate = rospy.Rate(10)
+        distancia_minima = float('inf')
 
-def move_robot(linear, angular):
-    msg = Twist()
-    msg.linear.x = linear
-    msg.angular.z = angular
-    cmd_vel_pub.publish(msg)
+        for i in range(self.pixels_array.shape[0]):
+            for j in range(self.pixels_array.shape[1]):
+                if self.pixels_array[i, j]:
+
+                    # Calcula a distância entre o robô e o obstáculo
+                    distancia = np.linalg.norm(np.array([j, i]) - np.array([self.posicao_atual.pose.position.x, self.posicao_atual.pose.position.y]))
+
+                    if distancia < distancia_minima:
+                        distancia_minima = distancia
+                        vetor_repulsao = np.array([j, i]) - np.array([self.posicao_atual.pose.position.x, self.posicao_atual.pose.position.y])
+                        magnitude = constante_repulsao / distancia**2
+                        vetor_repulsao_total = vetor_repulsao / distancia * magnitude
+
+
+        vetor_resultante = vetor_atracao + vetor_repulsao_total
+
+        self.posicao_atual.pose.position.x += vetor_resultante[0]
+        self.posicao_atual.pose.position.y += vetor_resultante[1]
+
+        self.position_publisher.publish(self.posicao_atual)
+        
+        velocidade_linear = np.linalg.norm(vetor_resultante)
+
+        # Calcular a orientação desejada e a velocidade angular
+        orientacao_desejada = np.arctan2(vetor_resultante[1], vetor_resultante[0])
+
+        orientacao_atual = self.posicao_atual.pose.orientation
+        rpy = euler_from_quaternion([orientacao_atual.x, orientacao_atual.y, orientacao_atual.z, orientacao_atual.w])
+        orientacao_atual_rpy = rpy[2]
+
+        velocidade_angular = orientacao_desejada - orientacao_atual_rpy
+
+        self.move_robot(np.linalg.norm(vetor_resultante), velocidade_angular)
+
+    def move_robot(self, linear, angular):
+        comando = Twist()
+        comando.linear.x = linear
+        comando.angular.z = angular
+        self.twist_publisher.publish(comando)
+
+    def run(self):
+        rate = rospy.Rate(10)
+
+        while not rospy.is_shutdown():
+            self.potential_fields() 
+            rate.sleep()
 
 if __name__ == '__main__':
-    obstacles = [Obstacle(4.0, 4.0, 0.5), Obstacle(6.0, 6.0, 0.5)]
-    potential_field = PotentialField(obstacles)
-
-    while not rospy.is_shutdown():
-        repulsion_force = potential_field.repel_obstacle(5.0, 5.0)
-        linear_velocity = 0.1  # Ajuste conforme necessário
-        angular_velocity = 0.0  # Ajuste conforme necessário
-
-        move_robot(linear_velocity, angular_velocity)
-
-        rate.sleep()
+    try:
+        pf = PotentialFields()
+        pf.run()
+    except rospy.ROSInterruptException:
+        pass
